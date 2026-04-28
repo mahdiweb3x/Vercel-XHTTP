@@ -2,7 +2,7 @@ export const config = { runtime: "edge" };
 
 const TARGET_BASE = (process.env.TARGET_DOMAIN || "").replace(/\/$/, "");
 // یک مسیر طولانی و رندوم برای تانل انتخاب کن
-const SECRET_PATH = "/mahdi"; 
+const SECRET_PATH = "/mahdi1"; 
 
 const STRIP_HEADERS = new Set([
   "host", "connection", "keep-alive", "proxy-authenticate", 
