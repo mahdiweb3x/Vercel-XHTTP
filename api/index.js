@@ -1,62 +1,63 @@
 export const config = { runtime: "edge" };
 
 const TARGET_BASE = (process.env.TARGET_DOMAIN || "").replace(/\/$/, "");
+// یک مسیر طولانی و رندوم برای تانل انتخاب کن
+const SECRET_PATH = "/mahdi"; 
 
 const STRIP_HEADERS = new Set([
-  "host",
-  "connection",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade",
-  "forwarded",
-  "x-forwarded-host",
-  "x-forwarded-proto",
-  "x-forwarded-port",
+  "host", "connection", "keep-alive", "proxy-authenticate", 
+  "proxy-authorization", "te", "trailer", "transfer-encoding", 
+  "upgrade", "forwarded", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-port"
 ]);
 
 export default async function handler(req) {
+  const url = new URL(req.url);
+
+  // ۱. استتار: اگر مسیر شامل کلید مخفی نباشد، یک صفحه جعلی نشان بده
+  if (!url.pathname.startsWith(SECRET_PATH)) {
+    return new Response(
+      `<html><body style="font-family:sans-serif;text-align:center;padding-top:50px;">
+      <h1>Site Under Maintenance</h1>
+      <p>We're performing some scheduled updates. Please check back later.</p>
+      </body></html>`,
+      { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }
+    );
+  }
+
   if (!TARGET_BASE) {
-    return new Response("Misconfigured: TARGET_DOMAIN is not set", { status: 500 });
+    return new Response("Configuration Error", { status: 500 });
   }
 
   try {
-    const pathStart = req.url.indexOf("/", 8);
-    const targetUrl =
-      pathStart === -1 ? TARGET_BASE + "/" : TARGET_BASE + req.url.slice(pathStart);
+    // استخراج مسیر واقعی از بعد از SECRET_PATH
+    const actualPath = url.pathname.slice(SECRET_PATH.length) + url.search;
+    const targetUrl = TARGET_BASE + (actualPath.startsWith("/") ? actualPath : "/" + actualPath);
 
     const out = new Headers();
-    let clientIp = null;
     for (const [k, v] of req.headers) {
-      if (STRIP_HEADERS.has(k)) continue;
-      if (k.startsWith("x-vercel-")) continue;
-      if (k === "x-real-ip") {
-        clientIp = v;
-        continue;
-      }
-      if (k === "x-forwarded-for") {
-        if (!clientIp) clientIp = v;
-        continue;
-      }
+      if (STRIP_HEADERS.has(k.toLowerCase()) || k.toLowerCase().startsWith("x-vercel-")) continue;
       out.set(k, v);
     }
-    if (clientIp) out.set("x-forwarded-for", clientIp);
 
-    const method = req.method;
-    const hasBody = method !== "GET" && method !== "HEAD";
+    // اضافه کردن یک هدر جعلی برای عادی جلوه دادن ترافیک
+    out.set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
 
-    return await fetch(targetUrl, {
-      method,
+    const res = await fetch(targetUrl, {
+      method: req.method,
       headers: out,
-      body: hasBody ? req.body : undefined,
+      body: req.body,
       duplex: "half",
       redirect: "manual",
     });
-  } catch (err) {
-    console.error("relay error:", err);
-    return new Response("Bad Gateway: Tunnel Failed", { status: 502 });
+
+    const respHeaders = new Headers(res.headers);
+    respHeaders.delete("content-encoding");
+
+    return new Response(res.body, {
+      status: res.status,
+      headers: respHeaders,
+    });
+  } catch (e) {
+    return new Response("Service Unavailable", { status: 503 });
   }
 }
